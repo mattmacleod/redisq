@@ -1,0 +1,19 @@
+-- Expire any items on the processing queue that have been there too long
+
+-- Queue names are encoded into the script using ERB
+local sourceQueue = "<%= source_queue %>"
+local processingQueue = "<%= processing_queue %>"
+local errorQueue = "<%= error_queue %>"
+
+-- Get the supplied current time, which we consider to be the timeout point
+local currentTime = tonumber(ARGV[1])
+
+-- Find out which items have expired by searching the processing set for all
+-- items with a score n where 0 < n < currentTime
+local itemsPastTimeout = redis.call('zrangebyscore', processingQueue, 0, currentTime);
+
+-- Move each item that has expired to the error queue
+for _, item in ipairs(itemsPastTimeout) do
+  redis.call('zrem', processingQueue, item)
+  redis.call('lpush', errorQueue, item)
+end

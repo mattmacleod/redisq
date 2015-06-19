@@ -1,0 +1,15 @@
+-- Push an item on to the source queue
+
+-- Queue names are encoded into the script using ERB
+local sourceQueue = "<%= source_queue %>"
+local processingQueue = "<%= processing_queue %>"
+local errorQueue = "<%= error_queue %>"
+
+-- Get the item we want to push into the queue
+local item = ARGV[1]
+
+-- Push the item into the source queue
+redis.call('lpush', sourceQueue, item)
+
+-- Publish a notification so that a listener can pop this item from the queue
+redis.call('publish', sourceQueue, sourceQueue)

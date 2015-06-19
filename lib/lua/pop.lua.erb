@@ -1,0 +1,19 @@
+-- Pop an item from the source queue and move it into the processing queue
+
+-- Queue names are encoded into the script using ERB
+local sourceQueue = "<%= source_queue %>"
+local processingQueue = "<%= processing_queue %>"
+local errorQueue = "<%= error_queue %>"
+
+-- Pop an item from the queue
+local item = redis.call('rpop', sourceQueue)
+
+-- If no item was available, return nothing
+if not item then return end
+
+-- Push the item into the processing set with the supplied timeout
+local timeout = ARGV[1]
+redis.call('zadd', processingQueue, timeout, item)
+
+-- Return the item we popped
+return item

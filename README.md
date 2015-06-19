@@ -18,8 +18,8 @@ reliable) and provides simple recovery of failed items.
 - Create a new queue using `Redisq.new(queue_name)`
 - Push items on to the queue using `#push` - e.g. `queue.push('Test data')`
 - Consume items from the queue using `#each`, which will block forever until an item is available, and yield the item
-- Consume a single item using `#once`
-- Pop an uite
+- Consume a single item using `#pop`
+- Pop an item
 
 ### Basic usage 
 ```ruby
@@ -107,7 +107,7 @@ queue.pop
 queue.push('Process me')
 #=> "B7D02F45-4ABB-4813-9B78-DBF9AF9AE1F6"
 
-queue.once do |item|
+queue.pop do |item|
   raise "I don't like this item"
 end
 
@@ -117,7 +117,7 @@ queue.errors.any?
 queue.errors.length
 #=> 1
 
-queue.errors.once do |item|
+queue.errors.pop do |item|
   puts item
   #=> <Redisq::ErroredItem @id="B7D02F45-4ABB-4813-9B78-DBF9AF9AE1F6" @queued_at=2015-06-06 15:55:00 UTC @errored_at=2015-06-06 15:56:00 UTC @payload="Process me" @last_error="I don't like this item">
 
@@ -144,7 +144,7 @@ finished consuming an item from the queue.
 queue.push('Process me')
 #=> "02E70222-678A-4A04-8565-6D053AE06559"
 
-queue.once do |item|
+queue.pop do |item|
   exit!
 end
 
@@ -157,7 +157,7 @@ When accessing the same queue, the item will be available
 queue.processing.length
 #=> 1
 
-queue.processing.once do |item|
+queue.processing.pop do |item|
   puts item
   #=> <Redisq::ProcessingItem @id="02E70222-678A-4A04-8565-6D053AE06559" @queued_at=2015-06-06 15:55:00 UTC @processing_at=2015-06-06 15:56:00 UTC @payload="Process me">
 
@@ -172,7 +172,7 @@ Items which are popped off the queue for processing will be considered failed
 after a default of 1 hour, after which they will be moved to the error queue.
 
 ```ruby
-queue.once do |item|
+queue.pop do |item|
   # This item takes too long to process
   sleep(10.hours)
   do_something_with(item)
@@ -188,10 +188,10 @@ queue.errors.any?
 
 ```
 
-You can override the timeout on calls to `#each` or `#once`
+You can override the timeout on calls to `#each` or `#pop`
 
 ```ruby
-queue.once(processing_timeout: 10.seconds) do |item|
+queue.pop(processing_timeout: 10.seconds) do |item|
   do_something_with(item)
 end
 ```
