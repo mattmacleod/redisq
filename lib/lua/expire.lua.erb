@@ -19,6 +19,7 @@ for _, item in ipairs(itemsPastTimeout) do
 end
 
 -- If there were any expired items, tell subsribers to attempt a pop
-if #itemsPastTimeout > 0 then
-  redis.call('publish', sourceQueue, sourceQueue)
-end
+-- TODO: don't do this at the moment, as we're pushing into the error queue
+-- if #itemsPastTimeout > 0 then
+--   redis.call('publish', sourceQueue, sourceQueue)
+-- end
