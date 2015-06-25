@@ -1,6 +1,9 @@
 require 'redis'
 require 'timeout'
+
 require_relative 'redisq/item'
+require_relative 'redisq/queue'
+
 require_relative 'redisq/lua_script'
 
 require 'pry'
@@ -9,13 +12,18 @@ class Redisq
   DEFAULT_PROCESSING_TIMEOUT = 60 * 60 # 1 hour
   TIMEOUT_FLUSH_PERIOD = 10 # Seconds
 
-  attr_reader :queue_name
+  attr_reader :source_queue, :error_queue, :processing_queue
+  attr_reader :notification_name
 
   attr_reader :scripts
   private :scripts
 
   def initialize(queue_name)
-    @queue_name = queue_name
+    @source_queue = SourceQueue.new(queue_name, connection)
+    @processing_queue = ProcessingQueue.new("#{ queue_name }_processing", connection)
+    @error_queue = ErrorQueue.new("#{ queue_name }_error", connection)
+    @notification_name = queue_name
+
     @scripts = {}
 
     register_scripts
@@ -27,7 +35,7 @@ class Redisq
   end
 
   def push(data)
-    Item.new(data).tap do |item|
+    Item.new(data, queue: source_queue).tap do |item|
       exec_script(:push, argv: [item.to_json])
     end.id
   end
@@ -36,6 +44,7 @@ class Redisq
     loop do
       with_processing_queue(timeout: processing_timeout) do |item|
         yield(item)
+        # TODO: fail if we didn't correctly commit the item
       end
     end
   end
@@ -46,28 +55,22 @@ class Redisq
     end
   end
 
+  def length
+    source_queue.length
+  end
+
   def any?
     length > 0
   end
 
-  def length
-    connection.llen(queue_name)
-  end
-
-  def flush!
-    connection.del(queue_name)
-  end
-
   def flush_all!
-    connection.del(queue_name, processing_queue_name, error_queue_name)
-  end
+    connection.multi do
+      source_queue.flush!
+      processing_queue.flush!
+      error_queue.flush!
+    end
 
-  def errors
-    fail "Not implemented"
-  end
-
-  def processing
-    fail "Not implemented"
+    true
   end
 
   private
@@ -76,43 +79,39 @@ class Redisq
     'redis://localhost'
   end
 
-  def processing_queue_name
-    @processing_queue_name = "#{ queue_name }_processing"
-  end
-
-  def error_queue_name
-    @error_queue_name = "#{ queue_name }_error"
-  end
-
   def with_processing_queue(timeout:)
-    flush_timeouts
+    expire_timed_out_items
 
-    until data = try_pop(processing_timeout: timeout)
+    until data = consume_item_from_source(processing_timeout: timeout)
       wait_for_notification
     end
 
     Timeout.timeout(timeout) do
-      yield Item.from_json(data)
+      yield ProcessingItem.from_json(data, queue: processing_queue)
     end
   end
 
+  # redis-rb has a pretty amazing bug that means a client can read stale data if
+  # two pubsub messages are sent to the same channel in quick succession. We
+  # have to work around this by tracking the state of our unsubscription, and
+  # ensuring we don't issue two unsubscribe requests.
   def wait_for_notification
-    connection.subscribe(queue_name) do |on|
+    connection.subscribe(notification_name) do |on|
       unsubscribed = false
 
       on.message do
-        connection.unsubscribe(queue_name) unless unsubscribed
+        connection.unsubscribe(notification_name) unless unsubscribed
         unsubscribed = true
       end
     end
   end
 
-  def try_pop(processing_timeout:)
+  def consume_item_from_source(processing_timeout:)
     timeout = Time.now.to_i + processing_timeout
     exec_script(:pop, argv: [timeout])
   end
 
-  def flush_timeouts
+  def expire_timed_out_items
     exec_script(:expire, argv: [Time.now.to_i])
   end
 
@@ -134,9 +133,9 @@ class Redisq
 
   def build_scripts
     params = {
-      source_queue: queue_name,
-      processing_queue: processing_queue_name,
-      error_queue: error_queue_name
+      source_queue: source_queue.name,
+      processing_queue: processing_queue.name,
+      error_queue: error_queue.name
     }
 
     LuaScript::SCRIPTS.each do |name|
@@ -147,7 +146,7 @@ class Redisq
   def run_timeout_thread
     Thread.new do
       loop do
-        flush_timeouts
+        expire_timed_out_items
         sleep(TIMEOUT_FLUSH_PERIOD)
       end
     end

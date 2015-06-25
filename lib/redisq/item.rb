@@ -5,18 +5,19 @@ class Redisq
   class Item
     class InvalidItemError < RuntimeError; end
 
-    attr_reader :payload, :id
+    attr_reader :payload, :id, :queue
 
-    def initialize(payload, id: nil)
+    def initialize(payload, id: nil, queue:)
       @payload = payload
+      @queue = queue
       @id = id || SecureRandom.uuid
     end
 
-    def self.from_json(json)
+    def self.from_json(json, queue:)
       data = JSON.load(json)
-      fail InvalidItemError unless data.has_key?('id') && data.has_key?('payload')
+      fail InvalidItemError unless data.key?('id') && data.key?('payload')
 
-      new(data['payload'], id: data['id'])
+      new(data['payload'], id: data['id'], queue: queue)
     end
 
     def as_json
@@ -29,5 +30,17 @@ class Redisq
     def to_json
       JSON.dump(as_json)
     end
+
+    def inspect
+      format(
+        "<%s:0x%x id=\"%s\" payload=\"%s\">",
+        self.class.name,
+        object_id,
+        id,
+        payload
+      )
+    end
   end
 end
+
+require_relative 'processing_item'

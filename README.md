@@ -18,8 +18,7 @@ reliable) and provides simple recovery of failed items.
 - Create a new queue using `Redisq.new(queue_name)`
 - Push items on to the queue using `#push` - e.g. `queue.push('Test data')`
 - Consume items from the queue using `#each`, which will block forever until an item is available, and yield the item
-- Consume a single item using `#pop`
-- Pop an item
+- Consume a single item using `#pop`, which will block until an item is available
 
 ### Basic usage 
 ```ruby
