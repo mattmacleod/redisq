@@ -1,3 +1,5 @@
+# This project is a WIP and does not yet work.
+
 # Redisq
 
 Implements a [reliable queue using Redis](http://redis.io/commands/rpoplpush#pattern-reliable-queue)

@@ -18,6 +18,8 @@ class Redisq
   attr_reader :scripts
   private :scripts
 
+  class DanglingItemError < RuntimeError; end
+
   def initialize(queue_name)
     @source_queue = SourceQueue.new(queue_name, connection)
     @processing_queue = ProcessingQueue.new("#{ queue_name }_processing", connection)
@@ -44,7 +46,7 @@ class Redisq
     loop do
       with_processing_queue(timeout: processing_timeout) do |item|
         yield(item)
-        # TODO: fail if we didn't correctly commit the item
+        fail DanglingItemError unless item.completed?
       end
     end
   end
@@ -86,6 +88,8 @@ class Redisq
       wait_for_notification
     end
 
+    # We don't need ot rescue a timeout error, because the item will be
+    # automatically flushed from the queue..
     Timeout.timeout(timeout) do
       yield ProcessingItem.from_json(data, queue: processing_queue)
     end
